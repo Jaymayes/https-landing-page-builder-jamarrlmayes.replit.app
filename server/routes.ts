@@ -348,6 +348,34 @@ export async function registerRoutes(
 ): Promise<Server> {
   const audioBodyParser = express.json({ limit: "50mb" });
 
+  // ==============================================
+  // HEALTH CHECK (Required for Render/Fly/Railway)
+  // ==============================================
+  app.get("/health", (req: Request, res: Response) => {
+    res.status(200).json({
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "development",
+    });
+  });
+
+  // Alias for different platforms
+  app.get("/api/health", (req: Request, res: Response) => {
+    res.status(200).json({
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "development",
+      services: {
+        database: !!process.env.DATABASE_URL,
+        openai: !!openaiApiKey,
+        heygen: !!process.env.HEYGEN_API_KEY,
+        clerk: !!process.env.CLERK_SECRET_KEY,
+        calendly: !!CALENDLY_URL,
+        slack: !!SLACK_WEBHOOK_URL,
+      },
+    });
+  });
+
   // HeyGen token endpoint - rate limited to prevent session abuse
   app.post("/api/heygen/token", heygenTokenLimiter, async (req: Request, res: Response) => {
     try {
