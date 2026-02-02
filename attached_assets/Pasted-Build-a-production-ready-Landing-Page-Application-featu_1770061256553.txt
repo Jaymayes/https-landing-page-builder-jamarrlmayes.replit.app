@@ -1,0 +1,59 @@
+Build a production-ready Landing Page Application featuring a "Floating" AI Salesperson.
+
+Goal
+Create a high-performance Next.js landing page for an AI Venture Studio ("Referral Service LLC"). The core feature is a "Floating Digital Human" widget using the HeyGen Streaming Avatar SDK and OpenAI GPT-4o. The avatar must converse verbally, qualify leads, and suggest booking times.
+
+Tech Stack
+* Frontend: Next.js 14+ (App Router), TypeScript, TailwindCSS.
+* AI Avatar: HeyGen Streaming Avatar SDK (via client-side WebRTC).
+* Intelligence: OpenAI API (GPT-4o) for orchestration and conversation.
+* State Management: React Context or Zustand for chat session state.
+* Styling: Framer Motion for the "expand/collapse" widget animations.
+
+Core Features (MVP)
+1. The Landing Page Layout
+   * Modern, clean B2B aesthetic.
+   * Hero Section: Headline "The Convergence of Service and Software."
+   * Services Section: Cards for "Business Upgrades" and "AI Company Creation."
+   * Trust Signals: Placeholders for client logos and case studies.
+
+2. The "Floating" Avatar Interface (Crucial)
+   * Implement the "Floating Digital Human" pattern.
+   * State A (Collapsed): A circular/pill-shaped widget in the bottom-right. Shows a small animated preview or static image with a status dot "Online - Ask me about AI".
+   * State B (Expanded): On click, expand to a Side Panel (desktop) or Full Screen (mobile).
+   * Visuals: The avatar video must use a transparent background (or match the UI background) to look like it is hovering.
+
+3. Real-Time Conversation Logic
+   * Initialize a HeyGen Streaming Session when the user activates the widget.
+   * Capture user microphone input (browser MediaRecorder).
+   * Send audio/text to OpenAI GPT-4o.
+   * OpenAI System Prompt: "You are a senior AI consultant for Referral Service LLC. Your goal is to qualify the lead by asking about company size, pain points, and budget. Keep responses under 2 sentences. Do not promise specific deliverables without a consultation."
+   * Stream the OpenAI text response back to HeyGen to generate lip-synced video.
+
+4. Function Calling (The Execution Layer)
+   * Enable OpenAI Tools/Function Calling.
+   * Tool 1: `qualify_lead(name, company, email, pain_point)` -> Logs to console (mock HubSpot).
+   * Tool 2: `check_availability()` -> Returns "I have slots Tuesday at 2 PM or 4 PM" (mock Calendly).
+   * If the user expresses high intent, trigger `qualify_lead`.
+
+5. "Interruptibility" UI
+   * Add a visual "Listening" waveform when the user is speaking.
+   * Add a "Stop/Interrupt" button that clears the current audio buffer if the user interrupts the avatar.
+
+Files & Structure
+* `app/page.tsx`: Main landing page content.
+* `components/AvatarWidget.tsx`: The core logic for HeyGen connection.
+* `lib/openai.ts`: Server action to handle the LLM request to protect API keys.
+* `lib/heygen.ts`: Helper to generate the HeyGen session token.
+
+Env Variables needed
+* `OPENAI_API_KEY`
+* `HEYGEN_API_KEY`
+
+Deliverables
+* Full code structure.
+* Instructions on where to get the HeyGen Trial Token.
+* A working "Start/End Session" flow for the avatar.
+
+Implementation Note
+Prioritize low latency. The avatar response loop must be as fast as possible. Ensure the background of the video element blends with the UI to avoid the "box" look.
