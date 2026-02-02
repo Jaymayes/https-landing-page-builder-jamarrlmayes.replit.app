@@ -178,7 +178,15 @@ export function registerWebhookRoutes(app: Express): void {
           return res.status(400).json({ error: "Missing email in payload" });
         }
 
-        // 5. Option B: Find most recent unscheduled lead by email
+        // 5. IDEMPOTENCY CHECK - Prevent duplicate processing on webhook retries
+        // Calendly sends retries if server blinks; we must check if already processed
+        const existingBooking = await storage.getLeadByCalendlyUri(inviteeUri);
+        if (existingBooking) {
+          console.log(`♻️ Idempotency: Event ${inviteeUri} already processed for lead ${existingBooking.id}`);
+          return res.status(200).json({ received: true, message: "Event already processed" });
+        }
+
+        // 6. Option B: Find most recent unscheduled lead by email
         const matchingLead = await storage.getUnscheduledLeadByEmail(email);
 
         if (matchingLead) {

@@ -21,7 +21,9 @@ import {
   getLeadSegments,
   getRecentLeads,
   getDailyLeadTrend,
+  getChannelPerformance,
 } from "./queries/dashboard";
+import adminRoutes from "./routes/admin";
 
 // Hybrid environment support: Replit uses AI_INTEGRATIONS_*, localhost uses standard OPENAI_API_KEY
 const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
@@ -126,6 +128,23 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             type: "string",
             enum: ["business_upgrade", "venture_studio"],
             description: "Whether this is a Business Upgrade (SME) or Venture Studio (founder) lead"
+          },
+          // UTM Attribution (injected by frontend from URL params)
+          utm_source: {
+            type: "string",
+            description: "Campaign source (e.g., linkedin, google, twitter)"
+          },
+          utm_medium: {
+            type: "string",
+            description: "Marketing medium (e.g., cpc, social, email)"
+          },
+          utm_campaign: {
+            type: "string",
+            description: "Campaign name (e.g., q1_2024_launch)"
+          },
+          referrer: {
+            type: "string",
+            description: "The URL the user came from"
           }
         },
         required: ["primary_pain_point"],
@@ -250,7 +269,7 @@ async function handleFunctionCall(
         // Select the appropriate Calendly link based on lead type
         const calendlyLink = isVentureStudio ? CALENDLY_VENTURE_URL : CALENDLY_URL;
 
-        // Save lead to database
+        // Save lead to database (with UTM attribution)
         const lead = await storage.createLead({
           name: args.lead_name || "Anonymous",
           company: args.company_name || "Unknown",
@@ -259,6 +278,11 @@ async function handleFunctionCall(
           companySize: args.company_size,
           budgetConfirmed: args.budget_confirmed || false,
           leadType: leadType,
+          // UTM Attribution
+          utmSource: args.utm_source,
+          utmMedium: args.utm_medium,
+          utmCampaign: args.utm_campaign,
+          referrer: args.referrer,
         });
         console.log("Lead qualified and scheduled:", lead);
 
@@ -489,6 +513,11 @@ export async function registerRoutes(
   });
 
   // ==========================================
+  // ADMIN API ENDPOINTS (Fee Management)
+  // ==========================================
+  app.use("/api/admin", adminRoutes);
+
+  // ==========================================
   // DASHBOARD API ENDPOINTS (ROI Evidence)
   // Protected by Clerk authentication
   // ==========================================
@@ -561,6 +590,25 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching lead trend:", error);
       res.status(500).json({ error: "Failed to fetch lead trend" });
+    }
+  });
+
+  /**
+   * Get channel performance (UTM attribution)
+   * Answers: "Which channel drives the most revenue?"
+   * Protected: Requires authenticated admin user
+   */
+  app.get("/api/dashboard/channels", devBypassAuth, requireAdmin, generalApiLimiter, async (req: Request, res: Response) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const channels = await getChannelPerformance(startDate);
+      res.json({ channels });
+    } catch (error) {
+      console.error("Error fetching channel performance:", error);
+      res.status(500).json({ error: "Failed to fetch channel performance" });
     }
   });
 

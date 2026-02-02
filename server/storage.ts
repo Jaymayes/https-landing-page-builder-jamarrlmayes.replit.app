@@ -21,6 +21,7 @@ export interface IStorage {
   getAllLeads(): Promise<Lead[]>;
   getLeadByEmail(email: string): Promise<Lead | undefined>;
   getUnscheduledLeadByEmail(email: string): Promise<Lead | undefined>;
+  getLeadByCalendlyUri(calendlyInviteeUri: string): Promise<Lead | undefined>;
   markLeadAsScheduled(leadId: number, calendlyData: {
     calendlyEventUri: string;
     calendlyInviteeUri: string;
@@ -102,6 +103,15 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(leads.email, email), eq(leads.scheduledCall, false)))
       .orderBy(desc(leads.createdAt))
       .limit(1);
+    return lead;
+  }
+
+  // Idempotency check: Find lead by Calendly invitee URI (prevents duplicate webhook processing)
+  async getLeadByCalendlyUri(calendlyInviteeUri: string): Promise<Lead | undefined> {
+    const [lead] = await db
+      .select()
+      .from(leads)
+      .where(eq(leads.calendlyInviteeUri, calendlyInviteeUri));
     return lead;
   }
 

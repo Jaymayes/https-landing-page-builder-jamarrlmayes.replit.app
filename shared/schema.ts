@@ -65,7 +65,15 @@ export const leads = pgTable("leads", {
   scheduledCall: boolean("scheduled_call").default(false), // The "Close the Loop" flag
   // Monetization (Success Fee tracking)
   successFeeCents: integer("success_fee_cents").default(0), // $100 = 10000 cents
+  successFeePolicy: text("success_fee_policy"), // e.g. "default_100_high_intent"
   feeCollected: boolean("fee_collected").default(false), // For billing tracking
+  feeCollectedAt: timestamp("fee_collected_at"), // When the fee was marked collected
+  feeCollectedBy: text("fee_collected_by"), // Admin user ID who collected
+  // UTM Attribution (for channel performance tracking)
+  utmSource: text("utm_source"), // e.g. "linkedin", "google", "twitter"
+  utmMedium: text("utm_medium"), // e.g. "cpc", "social", "email"
+  utmCampaign: text("utm_campaign"), // e.g. "q1_2024_launch"
+  referrer: text("referrer"), // The URL the user came from
   // Calendly metadata (populated by webhook)
   calendlyEventUri: text("calendly_event_uri"),
   calendlyInviteeUri: text("calendly_invitee_uri"),

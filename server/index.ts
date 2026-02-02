@@ -7,6 +7,26 @@ import { createServer } from "http";
 const app = express();
 const httpServer = createServer(app);
 
+// ==============================================
+// PRODUCTION HARDENING: Trust Proxy & Auth Guard
+// ==============================================
+
+// 1. Trust Proxy (Critical for rate limiting behind Load Balancers)
+// '1' trusts the first hop (Render, Fly, Railway, Heroku, etc.)
+// For Cloudflare -> PaaS, may need '2' or specific IPs
+app.set("trust proxy", 1);
+
+// 2. Production Auth Guardrail - Prevent SKIP_AUTH in production
+const isDev = process.env.NODE_ENV !== "production";
+const skipAuth = process.env.SKIP_AUTH === "true";
+
+if (!isDev && skipAuth) {
+  console.error("🚨 CRITICAL: SKIP_AUTH=true in production is DANGEROUS!");
+  console.error("🚨 Disabling SKIP_AUTH for safety. Remove from environment.");
+  // Force-disable in production
+  process.env.SKIP_AUTH = "false";
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;

@@ -221,3 +221,49 @@ export async function getDailyLeadTrend(days = 30) {
 
   return dailyCounts;
 }
+
+/**
+ * Channel Performance Query
+ * Answers: "Which channel drives the most revenue?"
+ * Uses UTM attribution data captured at lead qualification
+ */
+export interface ChannelPerformance {
+  channel: string | null;
+  totalLeads: number;
+  highIntent: number;
+  scheduled: number;
+  conversionRate: number;
+  potentialPipeline: number;
+  successFees: number;
+}
+
+export async function getChannelPerformance(startDate?: Date): Promise<ChannelPerformance[]> {
+  const whereClause = startDate ? gte(leads.createdAt, startDate) : undefined;
+
+  const AVERAGE_SETUP_FEE = 25000; // $25k per scheduled call
+
+  const channelData = await db
+    .select({
+      channel: leads.utmSource,
+      totalLeads: sql<number>`count(*)::int`,
+      highIntent: sql<number>`sum(case when ${leads.isHighIntent} then 1 else 0 end)::int`,
+      scheduled: sql<number>`sum(case when ${leads.scheduledCall} then 1 else 0 end)::int`,
+      successFees: sql<number>`coalesce(sum(${leads.successFeeCents}), 0)::int`,
+    })
+    .from(leads)
+    .where(whereClause)
+    .groupBy(leads.utmSource)
+    .orderBy(desc(sql`sum(case when ${leads.scheduledCall} then 1 else 0 end)`));
+
+  return channelData.map((row) => ({
+    channel: row.channel || "Direct / Unknown",
+    totalLeads: row.totalLeads,
+    highIntent: row.highIntent,
+    scheduled: row.scheduled,
+    conversionRate: row.highIntent > 0
+      ? Math.round((row.scheduled / row.highIntent) * 100)
+      : 0,
+    potentialPipeline: row.scheduled * AVERAGE_SETUP_FEE,
+    successFees: row.successFees,
+  }));
+}
