@@ -20,20 +20,91 @@ const openai = new OpenAI({
   baseURL: openaiBaseUrl,
 });
 
-const SYSTEM_PROMPT = `You are a senior AI consultant for Referral Service LLC. Your goal is to qualify the lead by asking about company size, pain points, and budget. Keep responses under 2 sentences. Do not promise specific deliverables without a consultation.
+// Calendly URL - set via environment variable
+const CALENDLY_URL = process.env.CALENDLY_URL || "https://calendly.com/referralservice/consultation";
 
-You have access to the following functions:
-- qualify_lead: Use when user provides their contact details (name, company, email, pain point)
-- check_availability: Use when user asks about scheduling or booking a consultation
+// Slack webhook for lead notifications
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
 
-Be conversational and helpful. Ask qualifying questions naturally.`;
+const SYSTEM_PROMPT = `**Role & Persona**
+You are the Senior AI Sales Representative for Referral Service LLC. You are a "living proof-of-concept"—a digital employee functioning exactly like the ones we build for clients.
+
+**Your Product: Business Upgrades (The Digital Workforce)**
+You sell "Business Upgrades," not just software.
+- Concept: We deploy "Digital Employees" (AI SDRs, Support Agents, Knowledge Ops).
+- Value Prop: Reduce manual labor costs by 30–40% within 18 months.
+- Target Audience: SMEs ($10M–$100M revenue) needing operational efficiency.
+
+**Pricing (The Hybrid Model)**
+If asked about price, be transparent but contextual:
+- Setup Fee (Hiring Fee): $25k–$75k one-time (covers architecture & build).
+- Monthly Retainer (Digital Salary): $3k–$10k/month (covers API costs & optimization).
+- Framing: Compare this favorably to a human employee costing $60k–$100k/year.
+
+**Conversation Flow & Rules**
+1. **Qualify:** Ask about their industry, team size, and current manual bottlenecks (Pain Points).
+2. **Pivot to Call:** If they have >$10M revenue or urgent pain, push for a consultation.
+3. **Venture Studio Exception:** If the user identifies as a non-technical founder wanting to build a startup, pivot to the "Venture Acceleration Platform" (MVP in weeks, equity-for-effort).
+
+**Tools & Scheduling**
+- Your goal is to trigger the \`qualify_and_schedule\` function when the user agrees to a meeting.
+- Do NOT try to negotiate specific times in chat. Collect their intent and provide the scheduling link.
+- Trigger \`qualify_and_schedule\` when the user agrees to a meeting or asks for next steps.
+
+**Response Style**
+- Keep responses under 2-3 sentences for conversational flow.
+- Be direct and confident. You ARE the product demonstration.
+- Acknowledge you are AI upfront—this is the "Show, Don't Tell" differentiation.`;
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "qualify_and_schedule",
+      description: "Call this when the user expresses interest in a meeting or asks about next steps. It returns the Calendly URL and logs the lead for follow-up.",
+      parameters: {
+        type: "object",
+        properties: {
+          lead_name: {
+            type: "string",
+            description: "The user's name (if provided)"
+          },
+          lead_email: {
+            type: "string",
+            description: "The user's email (if provided)"
+          },
+          company_name: {
+            type: "string",
+            description: "The user's company name (if provided)"
+          },
+          company_size: {
+            type: "string",
+            enum: ["1-10", "11-50", "51-200", "200+", "unknown"],
+            description: "Estimated employee count to determine High Intent"
+          },
+          primary_pain_point: {
+            type: "string",
+            description: "The manual workflow they want to automate (e.g., 'lead triage', 'customer support', 'data entry')"
+          },
+          budget_confirmed: {
+            type: "boolean",
+            description: "True if user acknowledged the $3k-$10k/month retainer range"
+          },
+          lead_type: {
+            type: "string",
+            enum: ["business_upgrade", "venture_studio"],
+            description: "Whether this is a Business Upgrade (SME) or Venture Studio (founder) lead"
+          }
+        },
+        required: ["primary_pain_point"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "qualify_lead",
-      description: "Log lead information when a user provides their contact details and pain points",
+      description: "Log lead information when collecting contact details mid-conversation (before scheduling)",
       parameters: {
         type: "object",
         properties: {
@@ -42,47 +113,145 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           email: { type: "string", description: "The lead's email address" },
           painPoint: { type: "string", description: "The main business challenge or pain point" },
         },
-        required: ["name", "company", "email", "painPoint"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "check_availability",
-      description: "Check available consultation slots when user wants to book a meeting",
-      parameters: {
-        type: "object",
-        properties: {
-          preferredDay: { type: "string", description: "User's preferred day for meeting" },
-        },
+        required: ["painPoint"],
       },
     },
   },
 ];
+
+// Send Slack notification for high-intent leads
+async function sendSlackNotification(leadData: Record<string, any>): Promise<void> {
+  if (!SLACK_WEBHOOK_URL) {
+    console.log("Slack webhook not configured, skipping notification");
+    return;
+  }
+
+  const isHighIntent = leadData.company_size === "51-200" ||
+                       leadData.company_size === "200+" ||
+                       leadData.budget_confirmed;
+
+  const emoji = isHighIntent ? "🚨" : "📋";
+  const intentLabel = isHighIntent ? "HIGH INTENT" : "New Lead";
+
+  const message = {
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: `${emoji} ${intentLabel} Lead`,
+          emoji: true
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          {
+            type: "mrkdwn",
+            text: `*Pain Point:*\n${leadData.primary_pain_point || "Not specified"}`
+          },
+          {
+            type: "mrkdwn",
+            text: `*Company Size:*\n${leadData.company_size || "Unknown"}`
+          },
+          {
+            type: "mrkdwn",
+            text: `*Budget Aware:*\n${leadData.budget_confirmed ? "✅ Yes" : "❌ No"}`
+          },
+          {
+            type: "mrkdwn",
+            text: `*Lead Type:*\n${leadData.lead_type === "venture_studio" ? "🚀 Venture Studio" : "💼 Business Upgrade"}`
+          }
+        ]
+      },
+      ...(leadData.lead_name || leadData.lead_email ? [{
+        type: "section",
+        fields: [
+          ...(leadData.lead_name ? [{
+            type: "mrkdwn",
+            text: `*Name:*\n${leadData.lead_name}`
+          }] : []),
+          ...(leadData.lead_email ? [{
+            type: "mrkdwn",
+            text: `*Email:*\n${leadData.lead_email}`
+          }] : []),
+          ...(leadData.company_name ? [{
+            type: "mrkdwn",
+            text: `*Company:*\n${leadData.company_name}`
+          }] : [])
+        ]
+      }] : []),
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `📅 Calendly link sent: ${CALENDLY_URL}`
+          }
+        ]
+      }
+    ]
+  };
+
+  try {
+    await fetch(SLACK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message),
+    });
+    console.log("Slack notification sent successfully");
+  } catch (error) {
+    console.error("Failed to send Slack notification:", error);
+  }
+}
 
 async function handleFunctionCall(
   name: string,
   args: Record<string, any>
 ): Promise<string> {
   switch (name) {
+    case "qualify_and_schedule":
+      try {
+        // Save lead to database
+        const lead = await storage.createLead({
+          name: args.lead_name || "Anonymous",
+          company: args.company_name || "Unknown",
+          email: args.lead_email || "",
+          painPoint: args.primary_pain_point,
+          companySize: args.company_size,
+          budgetConfirmed: args.budget_confirmed || false,
+          leadType: args.lead_type || "business_upgrade",
+        });
+        console.log("Lead qualified and scheduled:", lead);
+
+        // Send Slack notification (async, don't wait)
+        sendSlackNotification(args).catch(console.error);
+
+        // Return the Calendly link
+        return `Great! Here's your scheduling link: ${CALENDLY_URL}
+
+I've noted your interest in automating ${args.primary_pain_point}. Book a time that works for you, and we'll dive deeper into how we can deploy a Digital Employee for your team.`;
+      } catch (error) {
+        console.error("Failed to process qualify_and_schedule:", error);
+        return `Here's the link to schedule: ${CALENDLY_URL}
+
+Someone from our team will follow up shortly to discuss your needs.`;
+      }
+
     case "qualify_lead":
       try {
         const lead = await storage.createLead({
-          name: args.name,
-          company: args.company,
-          email: args.email,
+          name: args.name || "Anonymous",
+          company: args.company || "Unknown",
+          email: args.email || "",
           painPoint: args.painPoint,
         });
         console.log("Lead qualified:", lead);
-        return `Lead has been logged: ${args.name} from ${args.company}. Thank you for your interest!`;
+        return `I've noted your information${args.name ? `, ${args.name}` : ""}. Let me know when you're ready to schedule a consultation to discuss solutions for ${args.painPoint}.`;
       } catch (error) {
         console.error("Failed to save lead:", error);
-        return "I've noted your information. Someone from our team will follow up shortly.";
+        return "I've noted your information. Would you like to schedule a quick consultation to explore solutions?";
       }
-
-    case "check_availability":
-      return "I have slots available Tuesday at 2 PM or 4 PM, and Wednesday at 10 AM. Which works best for you?";
 
     default:
       return "I'm not sure how to handle that request.";

@@ -84,7 +84,7 @@ export function AvatarWidget() {
         setSessionStatus("connected");
         
         setTimeout(() => {
-          speakText("Hello! I'm an AI consultant from Referral Service. How can I help transform your business with AI today?");
+          speakText("Hi there. I'm the AI Sales Rep for Referral Service LLC. I'm a living proof-of-concept of the Digital Workforce we build for clients. I can help you upgrade your business operations to cut costs by 30%, or we can discuss building your own AI venture. Which path brought you here today?");
         }, 1000);
       });
 
