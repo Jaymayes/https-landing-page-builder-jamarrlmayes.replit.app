@@ -55,13 +55,18 @@ export const leads = pgTable("leads", {
   company: text("company").notNull().default("Unknown"),
   email: text("email").notNull().default(""),
   painPoint: text("pain_point").notNull(),
-  // New fields for Business Upgrades qualification
+  // Business Upgrades qualification fields
   companySize: text("company_size"), // "1-10", "11-50", "51-200", "200+"
   budgetConfirmed: boolean("budget_confirmed").default(false),
   leadType: text("lead_type").default("business_upgrade"), // "business_upgrade" or "venture_studio"
+  isHighIntent: boolean("is_high_intent").default(false), // 51-200+ or budget confirmed
   // Status tracking
   qualified: boolean("qualified").default(false),
-  scheduledCall: boolean("scheduled_call").default(false),
+  scheduledCall: boolean("scheduled_call").default(false), // The "Close the Loop" flag
+  // Calendly metadata (populated by webhook)
+  calendlyEventUri: text("calendly_event_uri"),
+  calendlyInviteeUri: text("calendly_invitee_uri"),
+  scheduledAt: timestamp("scheduled_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
