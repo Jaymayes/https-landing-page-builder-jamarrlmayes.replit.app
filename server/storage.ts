@@ -25,7 +25,7 @@ export interface IStorage {
     calendlyEventUri: string;
     calendlyInviteeUri: string;
     scheduledAt: Date;
-  }): Promise<Lead | undefined>;
+  }, isHighIntent?: boolean): Promise<Lead | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -73,7 +73,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLead(lead: InsertLead): Promise<Lead> {
-    const [newLead] = await db.insert(leads).values(lead).returning();
+    // Automatically determine high-intent status based on company size and budget
+    const isHighIntent = lead.companySize === "51-200" ||
+                          lead.companySize === "200+" ||
+                          lead.budgetConfirmed === true;
+
+    const [newLead] = await db.insert(leads).values({
+      ...lead,
+      isHighIntent,
+    }).returning();
     return newLead;
   }
 
@@ -98,14 +106,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   // "Close the Loop" - mark lead as scheduled when Calendly webhook fires
+  // Also sets Success Fee for high-intent leads (Cash Engine)
   async markLeadAsScheduled(
     leadId: number,
     calendlyData: {
       calendlyEventUri: string;
       calendlyInviteeUri: string;
       scheduledAt: Date;
-    }
+    },
+    isHighIntent: boolean = false
   ): Promise<Lead | undefined> {
+    // Success Fee in cents (default $100 = 10000 cents)
+    const SUCCESS_FEE_CENTS = parseInt(process.env.SUCCESS_FEE_CENTS || "10000", 10);
+
     const [updatedLead] = await db
       .update(leads)
       .set({
@@ -113,6 +126,8 @@ export class DatabaseStorage implements IStorage {
         calendlyEventUri: calendlyData.calendlyEventUri,
         calendlyInviteeUri: calendlyData.calendlyInviteeUri,
         scheduledAt: calendlyData.scheduledAt,
+        // Set Success Fee for high-intent leads
+        ...(isHighIntent && { successFeeCents: SUCCESS_FEE_CENTS }),
       })
       .where(eq(leads.id, leadId))
       .returning();

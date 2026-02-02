@@ -20,6 +20,10 @@ interface FunnelMetrics {
   budgetConfirmedCount: number;
   conversionRate: number;
   pipelineGenerated: number;
+  // Success Fee metrics (Cash Engine)
+  totalSuccessFees: number;
+  collectedFees: number;
+  pendingFees: number;
   bySize: Record<string, number>;
   byType: Record<string, number>;
 }
@@ -331,37 +335,80 @@ export function Dashboard() {
           </Card>
         </div>
 
-        {/* Lead Type Distribution */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Lead Type Distribution</CardTitle>
-            <CardDescription>
-              Business Upgrades vs Venture Studio leads
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-8">
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded bg-blue-500" />
-                <div>
-                  <div className="font-medium">Business Upgrades</div>
-                  <div className="text-2xl font-bold">
-                    {metrics?.byType?.business_upgrade || 0}
+        {/* Success Fees & Lead Type Distribution */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Success Fee Tracking (Cash Engine) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5 text-green-500" />
+                Success Fees
+              </CardTitle>
+              <CardDescription>
+                $100 per booked high-intent call
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Total Earned</span>
+                  <span className="text-2xl font-bold text-green-600">
+                    {formatCurrency((metrics?.totalSuccessFees || 0) / 100)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Collected</span>
+                  <span className="text-lg font-semibold">
+                    {formatCurrency((metrics?.collectedFees || 0) / 100)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Pending</span>
+                  <span className="text-lg font-semibold text-amber-600">
+                    {formatCurrency((metrics?.pendingFees || 0) / 100)}
+                  </span>
+                </div>
+                <div className="pt-2 border-t">
+                  <div className="text-xs text-muted-foreground">
+                    Based on {metrics?.scheduledCount || 0} booked calls × $100/call
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded bg-purple-500" />
-                <div>
-                  <div className="font-medium">Venture Studio</div>
-                  <div className="text-2xl font-bold">
-                    {metrics?.byType?.venture_studio || 0}
+            </CardContent>
+          </Card>
+
+          {/* Lead Type Distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Lead Type Distribution</CardTitle>
+              <CardDescription>
+                Business Upgrades vs Venture Studio leads
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 rounded bg-blue-500" />
+                  <div>
+                    <div className="font-medium">Business Upgrades</div>
+                    <div className="text-2xl font-bold">
+                      {metrics?.byType?.business_upgrade || 0}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 rounded bg-purple-500" />
+                  <div>
+                    <div className="font-medium">Venture Studio</div>
+                    <div className="text-2xl font-bold">
+                      {metrics?.byType?.venture_studio || 0}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

@@ -12,6 +12,11 @@ import {
   generalApiLimiter,
 } from "./middleware/rateLimiter";
 import {
+  requireAuth,
+  requireAdmin,
+  devBypassAuth,
+} from "./middleware/auth";
+import {
   getFunnelMetrics,
   getLeadSegments,
   getRecentLeads,
@@ -31,8 +36,9 @@ const openai = new OpenAI({
   baseURL: openaiBaseUrl,
 });
 
-// Calendly URL - set via environment variable
-const CALENDLY_URL = process.env.CALENDLY_URL || "https://calendly.com/referralservice/consultation";
+// Calendly URLs - Business Upgrades (SME) and Venture Studio (Founders)
+const CALENDLY_URL = process.env.CALENDLY_URL || "https://calendly.com/referralservice/business-upgrade";
+const CALENDLY_VENTURE_URL = process.env.CALENDLY_VENTURE_URL || "https://calendly.com/referralservice/venture-fit";
 
 // Slack webhook for lead notifications
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
@@ -71,6 +77,14 @@ We do not sell "software" or "dashboards." We deploy a **Digital Workforce**.
 **Response Style**
 - Keep responses under 2-3 sentences for conversational flow.
 - Be direct and confident. You ARE the product demonstration.
+
+**Venture Studio Branch**
+If the user mentions:
+- "I'm a founder", "pre-revenue", "startup", "seed stage", "building a product", "MVP", "co-founder", "technical co-founder"
+Then switch to Venture Studio mode:
+- *Value Prop:* "We're also a Venture Studio. We partner with technical founders to build AI-native products—equity + services hybrid."
+- *Qualification:* Ask about their product vision and whether they're seeking a technical co-founder or AI acceleration.
+- *Calendly:* Use \`lead_type: "venture_studio"\` when calling \`qualify_and_schedule\` to route to the Venture Fit calendar.
 
 **Constraint:** You cannot sign contracts. You exist to Qualify and Schedule.`;
 
@@ -204,7 +218,7 @@ async function sendSlackNotification(leadData: Record<string, any>): Promise<voi
         elements: [
           {
             type: "mrkdwn",
-            text: `📅 Calendly link sent: ${CALENDLY_URL}`
+            text: `📅 Calendly link sent: ${leadData.calendly_link || CALENDLY_URL}`
           }
         ]
       }
@@ -230,6 +244,12 @@ async function handleFunctionCall(
   switch (name) {
     case "qualify_and_schedule":
       try {
+        const leadType = args.lead_type || "business_upgrade";
+        const isVentureStudio = leadType === "venture_studio";
+
+        // Select the appropriate Calendly link based on lead type
+        const calendlyLink = isVentureStudio ? CALENDLY_VENTURE_URL : CALENDLY_URL;
+
         // Save lead to database
         const lead = await storage.createLead({
           name: args.lead_name || "Anonymous",
@@ -238,20 +258,27 @@ async function handleFunctionCall(
           painPoint: args.primary_pain_point,
           companySize: args.company_size,
           budgetConfirmed: args.budget_confirmed || false,
-          leadType: args.lead_type || "business_upgrade",
+          leadType: leadType,
         });
         console.log("Lead qualified and scheduled:", lead);
 
-        // Send Slack notification (async, don't wait)
-        sendSlackNotification(args).catch(console.error);
+        // Send Slack notification with correct Calendly link (async, don't wait)
+        sendSlackNotification({ ...args, calendly_link: calendlyLink }).catch(console.error);
 
-        // Return the Calendly link
-        return `Great! Here's your scheduling link: ${CALENDLY_URL}
+        // Return the appropriate Calendly link based on lead type
+        if (isVentureStudio) {
+          return `Great! Here's your Venture Fit scheduling link: ${calendlyLink}
+
+I've noted your interest in ${args.primary_pain_point}. Book a time to discuss how we can partner on your venture—we're excited to explore an equity + services collaboration.`;
+        }
+
+        return `Great! Here's your scheduling link: ${calendlyLink}
 
 I've noted your interest in automating ${args.primary_pain_point}. Book a time that works for you, and we'll dive deeper into how we can deploy a Digital Employee for your team.`;
       } catch (error) {
         console.error("Failed to process qualify_and_schedule:", error);
-        return `Here's the link to schedule: ${CALENDLY_URL}
+        const calendlyLink = args.lead_type === "venture_studio" ? CALENDLY_VENTURE_URL : CALENDLY_URL;
+        return `Here's the link to schedule: ${calendlyLink}
 
 Someone from our team will follow up shortly to discuss your needs.`;
       }
@@ -463,13 +490,15 @@ export async function registerRoutes(
 
   // ==========================================
   // DASHBOARD API ENDPOINTS (ROI Evidence)
+  // Protected by Clerk authentication
   // ==========================================
 
   /**
    * Get funnel metrics for the KPI dashboard
    * Query param: days (default: 30)
+   * Protected: Requires authenticated admin user
    */
-  app.get("/api/dashboard/metrics", generalApiLimiter, async (req: Request, res: Response) => {
+  app.get("/api/dashboard/metrics", devBypassAuth, requireAdmin, generalApiLimiter, async (req: Request, res: Response) => {
     try {
       const days = parseInt(req.query.days as string) || 30;
       const startDate = new Date();
@@ -489,8 +518,9 @@ export async function registerRoutes(
   /**
    * Get lead segments by company size
    * For the "Business Upgrade Proof" table
+   * Protected: Requires authenticated admin user
    */
-  app.get("/api/dashboard/segments", generalApiLimiter, async (req: Request, res: Response) => {
+  app.get("/api/dashboard/segments", devBypassAuth, requireAdmin, generalApiLimiter, async (req: Request, res: Response) => {
     try {
       const days = parseInt(req.query.days as string) || 30;
       const startDate = new Date();
@@ -506,8 +536,9 @@ export async function registerRoutes(
 
   /**
    * Get recent leads for activity feed
+   * Protected: Requires authenticated admin user
    */
-  app.get("/api/dashboard/recent", generalApiLimiter, async (req: Request, res: Response) => {
+  app.get("/api/dashboard/recent", devBypassAuth, requireAdmin, generalApiLimiter, async (req: Request, res: Response) => {
     try {
       const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
       const recentLeads = await getRecentLeads(limit);
@@ -520,8 +551,9 @@ export async function registerRoutes(
 
   /**
    * Get daily lead trend for chart
+   * Protected: Requires authenticated admin user
    */
-  app.get("/api/dashboard/trend", generalApiLimiter, async (req: Request, res: Response) => {
+  app.get("/api/dashboard/trend", devBypassAuth, requireAdmin, generalApiLimiter, async (req: Request, res: Response) => {
     try {
       const days = Math.min(parseInt(req.query.days as string) || 30, 90);
       const trend = await getDailyLeadTrend(days);

@@ -183,13 +183,20 @@ export function registerWebhookRoutes(app: Express): void {
 
         if (matchingLead) {
           // 6. Update the lead - "Close the Loop"
-          const updatedLead = await storage.markLeadAsScheduled(matchingLead.id, {
-            calendlyEventUri: eventUri,
-            calendlyInviteeUri: inviteeUri,
-            scheduledAt: new Date(scheduledTime),
-          });
+          // Check if this is a high-intent lead (eligible for Success Fee)
+          const isHighIntent = matchingLead.isHighIntent || false;
 
-          console.log(`Lead ${matchingLead.id} marked as scheduled:`, updatedLead);
+          const updatedLead = await storage.markLeadAsScheduled(
+            matchingLead.id,
+            {
+              calendlyEventUri: eventUri,
+              calendlyInviteeUri: inviteeUri,
+              scheduledAt: new Date(scheduledTime),
+            },
+            isHighIntent
+          );
+
+          console.log(`Lead ${matchingLead.id} marked as scheduled (High Intent: ${isHighIntent}):`, updatedLead);
 
           // 7. Send BOOKED Slack notification
           await sendBookedSlackNotification(

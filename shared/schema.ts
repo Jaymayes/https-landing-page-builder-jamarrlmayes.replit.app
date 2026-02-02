@@ -63,6 +63,9 @@ export const leads = pgTable("leads", {
   // Status tracking
   qualified: boolean("qualified").default(false),
   scheduledCall: boolean("scheduled_call").default(false), // The "Close the Loop" flag
+  // Monetization (Success Fee tracking)
+  successFeeCents: integer("success_fee_cents").default(0), // $100 = 10000 cents
+  feeCollected: boolean("fee_collected").default(false), // For billing tracking
   // Calendly metadata (populated by webhook)
   calendlyEventUri: text("calendly_event_uri"),
   calendlyInviteeUri: text("calendly_invitee_uri"),

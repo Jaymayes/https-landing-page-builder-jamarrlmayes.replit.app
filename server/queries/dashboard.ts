@@ -11,6 +11,9 @@ import { sql, gte, desc, eq, and } from "drizzle-orm";
  * 3. Calculates Pipeline Generated ($25k per scheduled call)
  */
 
+// Success Fee configuration (from env or default $100)
+const SUCCESS_FEE_CENTS = parseInt(process.env.SUCCESS_FEE_CENTS || "10000", 10);
+
 export interface FunnelMetrics {
   totalVolume: number;
   highIntentCount: number;
@@ -18,6 +21,10 @@ export interface FunnelMetrics {
   budgetConfirmedCount: number;
   conversionRate: number;
   pipelineGenerated: number;
+  // Success Fee metrics (Cash Engine)
+  totalSuccessFees: number; // Total fees earned in cents
+  collectedFees: number; // Fees already collected
+  pendingFees: number; // Fees pending collection
   bySize: Record<string, number>;
   byType: Record<string, number>;
 }
@@ -44,6 +51,9 @@ export async function getFunnelMetrics(startDate: Date): Promise<FunnelMetrics> 
       highIntentCount: sql<number>`sum(case when ${leads.isHighIntent} then 1 else 0 end)::int`,
       scheduledCount: sql<number>`sum(case when ${leads.scheduledCall} then 1 else 0 end)::int`,
       budgetConfirmedCount: sql<number>`sum(case when ${leads.budgetConfirmed} then 1 else 0 end)::int`,
+      // Success Fee aggregations
+      totalSuccessFees: sql<number>`coalesce(sum(${leads.successFeeCents}), 0)::int`,
+      collectedFees: sql<number>`coalesce(sum(case when ${leads.feeCollected} then ${leads.successFeeCents} else 0 end), 0)::int`,
     })
     .from(leads)
     .where(gte(leads.createdAt, startDate));
@@ -82,6 +92,9 @@ export async function getFunnelMetrics(startDate: Date): Promise<FunnelMetrics> 
   const highIntentCount = metrics?.highIntentCount || 0;
   const scheduledCount = metrics?.scheduledCount || 0;
   const budgetConfirmedCount = metrics?.budgetConfirmedCount || 0;
+  const totalSuccessFees = metrics?.totalSuccessFees || 0;
+  const collectedFees = metrics?.collectedFees || 0;
+  const pendingFees = totalSuccessFees - collectedFees;
 
   // Conversion rate: scheduled / high intent (avoid division by zero)
   const conversionRate = highIntentCount > 0
@@ -99,6 +112,9 @@ export async function getFunnelMetrics(startDate: Date): Promise<FunnelMetrics> 
     budgetConfirmedCount,
     conversionRate,
     pipelineGenerated,
+    totalSuccessFees,
+    collectedFees,
+    pendingFees,
     bySize,
     byType,
   };
