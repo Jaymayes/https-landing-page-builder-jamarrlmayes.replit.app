@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";
 import { storage } from "./storage";
+import { webhookLimiter } from "./middleware/rateLimiter";
 
 const CALENDLY_SIGNING_KEY = process.env.CALENDLY_WEBHOOK_SIGNING_KEY;
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
@@ -137,7 +138,7 @@ export function registerWebhookRoutes(app: Express): void {
    * 3. Updating the lead with scheduledCall = true
    * 4. Sending a BOOKED notification to Slack
    */
-  app.post("/api/webhooks/calendly", async (req: Request, res: Response) => {
+  app.post("/api/webhooks/calendly", webhookLimiter, async (req: Request, res: Response) => {
     try {
       // 1. Check for signing key configuration
       if (!CALENDLY_SIGNING_KEY) {

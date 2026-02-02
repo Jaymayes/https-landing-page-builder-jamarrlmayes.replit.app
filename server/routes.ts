@@ -6,6 +6,17 @@ import { ensureCompatibleFormat, speechToText } from "./replit_integrations/audi
 import express from "express";
 import { z } from "zod";
 import { insertConversationSchema, insertLeadSchema } from "@shared/schema";
+import {
+  aiChatLimiter,
+  heygenTokenLimiter,
+  generalApiLimiter,
+} from "./middleware/rateLimiter";
+import {
+  getFunnelMetrics,
+  getLeadSegments,
+  getRecentLeads,
+  getDailyLeadTrend,
+} from "./queries/dashboard";
 
 // Hybrid environment support: Replit uses AI_INTEGRATIONS_*, localhost uses standard OPENAI_API_KEY
 const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
@@ -271,7 +282,8 @@ export async function registerRoutes(
 ): Promise<Server> {
   const audioBodyParser = express.json({ limit: "50mb" });
 
-  app.post("/api/heygen/token", async (req: Request, res: Response) => {
+  // HeyGen token endpoint - rate limited to prevent session abuse
+  app.post("/api/heygen/token", heygenTokenLimiter, async (req: Request, res: Response) => {
     try {
       const apiKey = process.env.HEYGEN_API_KEY;
       if (!apiKey) {
@@ -338,7 +350,8 @@ export async function registerRoutes(
     content: z.string().min(1).max(4000),
   });
 
-  app.post("/api/chat/:conversationId", async (req: Request, res: Response) => {
+  // AI Chat endpoint - rate limited to prevent token burning (20 req/hour/IP)
+  app.post("/api/chat/:conversationId", aiChatLimiter, async (req: Request, res: Response) => {
     try {
       const conversationId = parseInt(req.params.conversationId as string);
       const parsed = chatMessageSchema.safeParse(req.body);
@@ -445,6 +458,77 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching leads:", error);
       res.status(500).json({ error: "Failed to fetch leads" });
+    }
+  });
+
+  // ==========================================
+  // DASHBOARD API ENDPOINTS (ROI Evidence)
+  // ==========================================
+
+  /**
+   * Get funnel metrics for the KPI dashboard
+   * Query param: days (default: 30)
+   */
+  app.get("/api/dashboard/metrics", generalApiLimiter, async (req: Request, res: Response) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const metrics = await getFunnelMetrics(startDate);
+      res.json({
+        period: { days, startDate: startDate.toISOString() },
+        metrics,
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard metrics:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard metrics" });
+    }
+  });
+
+  /**
+   * Get lead segments by company size
+   * For the "Business Upgrade Proof" table
+   */
+  app.get("/api/dashboard/segments", generalApiLimiter, async (req: Request, res: Response) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const segments = await getLeadSegments(startDate);
+      res.json({ segments });
+    } catch (error) {
+      console.error("Error fetching lead segments:", error);
+      res.status(500).json({ error: "Failed to fetch lead segments" });
+    }
+  });
+
+  /**
+   * Get recent leads for activity feed
+   */
+  app.get("/api/dashboard/recent", generalApiLimiter, async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+      const recentLeads = await getRecentLeads(limit);
+      res.json({ leads: recentLeads });
+    } catch (error) {
+      console.error("Error fetching recent leads:", error);
+      res.status(500).json({ error: "Failed to fetch recent leads" });
+    }
+  });
+
+  /**
+   * Get daily lead trend for chart
+   */
+  app.get("/api/dashboard/trend", generalApiLimiter, async (req: Request, res: Response) => {
+    try {
+      const days = Math.min(parseInt(req.query.days as string) || 30, 90);
+      const trend = await getDailyLeadTrend(days);
+      res.json({ trend });
+    } catch (error) {
+      console.error("Error fetching lead trend:", error);
+      res.status(500).json({ error: "Failed to fetch lead trend" });
     }
   });
 
