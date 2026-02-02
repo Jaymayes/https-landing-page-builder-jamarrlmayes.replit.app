@@ -7,9 +7,17 @@ import express from "express";
 import { z } from "zod";
 import { insertConversationSchema, insertLeadSchema } from "@shared/schema";
 
+// Hybrid environment support: Replit uses AI_INTEGRATIONS_*, localhost uses standard OPENAI_API_KEY
+const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+const openaiBaseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || undefined;
+
+if (!openaiApiKey) {
+  console.error("ERROR: Missing OpenAI API key. Set OPENAI_API_KEY in your .env file.");
+}
+
 const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  apiKey: openaiApiKey,
+  baseURL: openaiBaseUrl,
 });
 
 const SYSTEM_PROMPT = `You are a senior AI consultant for Referral Service LLC. Your goal is to qualify the lead by asking about company size, pain points, and budget. Keep responses under 2 sentences. Do not promise specific deliverables without a consultation.
@@ -91,7 +99,10 @@ export async function registerRoutes(
     try {
       const apiKey = process.env.HEYGEN_API_KEY;
       if (!apiKey) {
-        return res.status(500).json({ error: "HeyGen API key not configured" });
+        console.error("ERROR: Missing HEYGEN_API_KEY in environment variables. Get your key at https://app.heygen.com/settings?nav=API");
+        return res.status(500).json({
+          error: "HeyGen API key not configured. Check server logs for setup instructions."
+        });
       }
 
       const response = await fetch("https://api.heygen.com/v1/streaming.create_token", {
@@ -134,7 +145,7 @@ export async function registerRoutes(
 
   app.get("/api/conversations/:id", async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const conversation = await storage.getConversation(id);
       if (!conversation) {
         return res.status(404).json({ error: "Conversation not found" });
@@ -153,7 +164,7 @@ export async function registerRoutes(
 
   app.post("/api/chat/:conversationId", async (req: Request, res: Response) => {
     try {
-      const conversationId = parseInt(req.params.conversationId);
+      const conversationId = parseInt(req.params.conversationId as string);
       const parsed = chatMessageSchema.safeParse(req.body);
       
       if (!parsed.success) {
@@ -187,8 +198,10 @@ export async function registerRoutes(
 
       if (message?.tool_calls) {
         for (const toolCall of message.tool_calls) {
-          const functionName = toolCall.function.name;
-          const functionArgs = JSON.parse(toolCall.function.arguments);
+          // Type assertion for function tool calls
+          const fnCall = toolCall as { type: "function"; id: string; function: { name: string; arguments: string } };
+          const functionName = fnCall.function.name;
+          const functionArgs = JSON.parse(fnCall.function.arguments);
           const result = await handleFunctionCall(functionName, functionArgs);
           
           functionCalls.push({
